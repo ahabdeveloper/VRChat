@@ -1,3 +1,5 @@
+Easy Clothes Setup.py
+
 First and foremost, this addon is intended for use with already rigged garments—either ones you've purchased separately or ones you've weight-painted yourself. It does not work with garments that haven't been weight-painted yet.
 
 To install the addon as a legacy addon, download the ZIP file, go to Preferences > Addons, click on Install, select your zip file, and once it's loaded, activate it.
