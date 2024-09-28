@@ -1,0 +1,257 @@
+bl_info = {
+    "name": "Easy Clothes Setup",
+    "author": "AhabDev",
+    "version": (1, 0, 1),
+    "blender": (4, 0, 0),
+    "location": "View3D > Sidebar",
+    "description": "Easily set up clothes with armatures",
+    "warning": "",
+    "wiki_url": "",
+    "category": "Object",
+}
+
+import bpy
+
+class EasyClothesSetupPanel(bpy.types.Panel):
+    """Creates a Panel in the Object properties window"""
+    bl_label = "Easy Clothes Setup"
+    bl_idname = "VIEW3D_PT_easy_clothes_setup"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'Easy Clothes'
+
+    def draw(self, context):
+        layout = self.layout
+        wm = context.window_manager
+
+        # Warning line with an icon
+        # row = layout.row()
+        # row.label(text="Be sure to apply Transforms before executing", icon='INFO')
+
+        # Target armature selection
+        layout.prop(wm, "target_armature")
+
+        # 'Combine Clothes' button
+        layout.operator("object.combine_clothes", text="Combine Clothes")
+
+        # 'Debug' foldout
+        box = layout.box()
+        box.prop(wm, "debug_foldout", icon='TRIA_DOWN' if wm.debug_foldout else 'TRIA_RIGHT', text="Debug", emboss=False)
+        if wm.debug_foldout:
+            # Debug lines
+            meshes_selected = [obj for obj in context.selected_objects if obj.type == 'MESH']
+            if meshes_selected:
+                box.label(text="Meshes selected: Yes", icon='CHECKMARK')
+            else:
+                box.label(text="Meshes selected: No", icon='ERROR')
+
+            if wm.target_armature:
+                box.label(text="Armature reference is filled: Yes", icon='CHECKMARK')
+            else:
+                box.label(text="Armature reference is filled: No", icon='ERROR')
+
+            meshes_under_armature = False
+            original_armature = None
+            for obj in meshes_selected:
+                if obj.parent and obj.parent.type == 'ARMATURE':
+                    meshes_under_armature = True
+                    original_armature = obj.parent
+                    break
+            if meshes_under_armature:
+                box.label(text="Meshes under Armature: Yes", icon='CHECKMARK')
+            else:
+                box.label(text="Meshes under Armature: No", icon='ERROR')
+
+            # Check for extra bones
+            if meshes_under_armature:
+                if wm.target_armature:
+                    original_bone_names = set(bone.name for bone in original_armature.data.bones)
+                    target_bone_names = set(bone.name for bone in wm.target_armature.data.bones)
+                    extra_bones = original_bone_names - target_bone_names
+                    if extra_bones:
+                        box.label(text="Extra bones detected in original armature.", icon='INFO')
+                        # Display transfer_extra_bones property
+                        box.prop(wm, "transfer_extra_bones")
+                    else:
+                        box.label(text="No extra bones in original armature.", icon='CHECKMARK')
+                else:
+                    box.label(text="Assign target armature for extra bones analysis.", icon='INFO')
+
+        # 'Instructions' foldout
+        box = layout.box()
+        box.prop(wm, "instructions_foldout", icon='TRIA_DOWN' if wm.instructions_foldout else 'TRIA_RIGHT', text="Instructions", emboss=False)
+        if wm.instructions_foldout:
+            box.label(text="This addon is meant to transfer clothes between armatures with the same structures (bones, names, etc).")
+            box.label(text="1. Apply transforms to all meshes (Ctrl+A > All Transforms).")
+            box.label(text="2. Select one or more meshes to combine.")
+            box.label(text="3. Assign the target armature using the field above.")
+            box.label(text="4. Click 'Combine Clothes' to parent meshes to the armature.")
+            box.label(text="5. Previous armatures (if any) will be deleted along with their children.")
+            box.label(text="6. If extra bones are detected, use 'Transfer extra bones' to include them.")
+            layout.operator("wm.url_open", text="For more info check this YT tutorial").url = "https://www.youtube.com/watch?v=anG0J5r6pWk"
+
+        # Credits and links
+        layout.separator()
+        layout.label(text="Credits. v1.0.1. AhabDev 2024.")
+        layout.operator("wm.url_open", text="Visit my store at Gumroad").url = "https://ahabdev.gumroad.com"
+        layout.operator("wm.url_open", text="Hire me at Fiverr").url = "https://www.fiverr.com/ahab_d"
+        layout.label(text="Services:")
+        layout.label(text="- Create new garments.")
+        layout.label(text="- Weight paint anything.")
+        layout.label(text="- Substance texture painting.")
+        layout.label(text="- Create new riggings.")
+        layout.label(text="- 3D characters customization")
+        layout.label(text="- Others.")
+
+class OBJECT_OT_combine_clothes(bpy.types.Operator):
+    """Combines selected clothes with the target armature"""
+    bl_idname = "object.combine_clothes"
+    bl_label = "Combine Clothes"
+    bl_description = "Combines selected clothes with the target armature"
+
+    def execute(self, context):
+        """Executes the combine clothes operation."""
+        wm = context.window_manager
+        meshes_selected = [obj for obj in context.selected_objects if obj.type == 'MESH']
+        if not meshes_selected:
+            self.report({'ERROR'}, "No meshes selected.")
+            return {'CANCELLED'}
+
+        if not wm.target_armature:
+            self.report({'ERROR'}, "No target armature assigned.")
+            return {'CANCELLED'}
+
+        target_armature = wm.target_armature
+
+        # Check for original armature
+        original_armature = None
+        for obj in meshes_selected:
+            if obj.parent and obj.parent.type == 'ARMATURE' and obj.parent != target_armature:
+                original_armature = obj.parent
+                break
+
+        if original_armature:
+            self.report({'INFO'}, f"Detected existing armature: {original_armature.name}")
+
+        # Transfer extra bones if needed
+        if original_armature and wm.transfer_extra_bones:
+            # Transfer extra bones from original_armature to target_armature
+            original_bone_names = set(bone.name for bone in original_armature.data.bones)
+            target_bone_names = set(bone.name for bone in target_armature.data.bones)
+            extra_bone_names = original_bone_names - target_bone_names
+            if extra_bone_names:
+                # Switch to edit mode to copy bones
+                bpy.ops.object.mode_set(mode='OBJECT')
+                bpy.ops.object.select_all(action='DESELECT')
+                original_armature.select_set(True)
+                context.view_layer.objects.active = original_armature
+                bpy.ops.object.mode_set(mode='EDIT')
+
+                # Store the bone data to copy
+                extra_bones_data = []
+                for bone_name in extra_bone_names:
+                    orig_bone = original_armature.data.edit_bones.get(bone_name)
+                    if orig_bone:
+                        bone_data = {
+                            'name': orig_bone.name,
+                            'head': orig_bone.head.copy(),
+                            'tail': orig_bone.tail.copy(),
+                            'roll': orig_bone.roll,
+                            'use_connect': orig_bone.use_connect,
+                            'inherit_rotation': orig_bone.use_inherit_rotation,
+                            'inherit_scale': orig_bone.inherit_scale,
+                            'use_local_location': orig_bone.use_local_location,
+                            'use_deform': orig_bone.use_deform,
+                            'parent_name': orig_bone.parent.name if orig_bone.parent else None,
+                        }
+                        extra_bones_data.append(bone_data)
+
+                bpy.ops.object.mode_set(mode='OBJECT')
+                # Now switch to target armature to add bones
+                bpy.ops.object.select_all(action='DESELECT')
+                target_armature.select_set(True)
+                context.view_layer.objects.active = target_armature
+                bpy.ops.object.mode_set(mode='EDIT')
+
+                for bone_data in extra_bones_data:
+                    new_bone = target_armature.data.edit_bones.new(bone_data['name'])
+                    new_bone.head = bone_data['head']
+                    new_bone.tail = bone_data['tail']
+                    new_bone.roll = bone_data['roll']
+                    new_bone.use_connect = bone_data['use_connect']
+                    new_bone.use_inherit_rotation = bone_data['inherit_rotation']
+                    new_bone.inherit_scale = bone_data['inherit_scale']
+                    new_bone.use_local_location = bone_data['use_local_location']
+                    new_bone.use_deform = bone_data['use_deform']
+                    if bone_data['parent_name']:
+                        parent_bone = target_armature.data.edit_bones.get(bone_data['parent_name'])
+                        if parent_bone:
+                            new_bone.parent = parent_bone
+
+                bpy.ops.object.mode_set(mode='OBJECT')
+                self.report({'INFO'}, f"Transferred extra bones to {target_armature.name}")
+            else:
+                self.report({'INFO'}, "No extra bones to transfer.")
+
+        # Parent meshes to the new armature and add modifiers
+        for obj in meshes_selected:
+            obj.parent = target_armature
+            has_armature_modifier = False
+            for mod in obj.modifiers:
+                if mod.type == 'ARMATURE':
+                    has_armature_modifier = True
+                    mod.object = target_armature
+                    break
+            if not has_armature_modifier:
+                mod = obj.modifiers.new(name="Armature", type='ARMATURE')
+                mod.object = target_armature
+
+        # Delete original armature and its children if it exists
+        if original_armature:
+            original_armature_name = original_armature.name  # Store the name before deletion
+            # Collect children of the original armature that are not the selected meshes
+            children_to_delete = [child for child in original_armature.children if child not in meshes_selected]
+            for child in children_to_delete:
+                bpy.data.objects.remove(child, do_unlink=True)
+            # Remove the original armature
+            bpy.data.objects.remove(original_armature, do_unlink=True)
+            self.report({'INFO'}, f"Deleted armature and its children: {original_armature_name}")
+        else:
+            self.report({'INFO'}, "No original armature to delete.")
+
+        return {'FINISHED'}
+
+classes = (
+    EasyClothesSetupPanel,
+    OBJECT_OT_combine_clothes,
+)
+
+def register():
+    for cls in classes:
+        bpy.utils.register_class(cls)
+    wm = bpy.types.WindowManager
+    wm.debug_foldout = bpy.props.BoolProperty(name="Debug", default=False)
+    wm.instructions_foldout = bpy.props.BoolProperty(name="Instructions", default=False)
+    wm.target_armature = bpy.props.PointerProperty(
+        name="Target Armature",
+        type=bpy.types.Object,
+        poll=lambda self, obj: obj.type == 'ARMATURE',
+        description="Armature to combine clothes with"
+    )
+    wm.transfer_extra_bones = bpy.props.BoolProperty(
+        name="Transfer extra bones",
+        default=True,
+        description="Transfer extra bones from the original armature to the target armature"
+    )
+
+def unregister():
+    wm = bpy.types.WindowManager
+    del wm.debug_foldout
+    del wm.instructions_foldout
+    del wm.target_armature
+    del wm.transfer_extra_bones
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
+if __name__ == "__main__":
+    register()
