@@ -142,9 +142,6 @@ You have a mesh where certain vertex weights are too high, causing deformation i
 
 ## Limitations
 
-- **Single Vertex Group Processing**:  
-  This addon processes only the active vertex group by default. To process all vertex groups, select **Cap Weights - ALL**.
-
 - **No Built-in Undo**:  
   The operator doesn’t have an internal undo feature. Use Blender’s undo function (`Ctrl + Z`) if needed.
 
