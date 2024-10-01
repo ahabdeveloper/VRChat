@@ -1,0 +1,116 @@
+bl_info = {
+    "name": "Cap Weights Addon",
+    "author": "Your Name",
+    "version": (1, 1),
+    "blender": (2, 80, 0),  # Compatible with Blender 2.80 and above
+    "location": "View3D > Weight Paint > Context Menu",
+    "description": "Cap Weights Operator",
+    "warning": "",
+    "wiki_url": "",
+    "category": "Object",
+}
+
+import bpy
+
+class CapWeightsOperator(bpy.types.Operator):
+    """Cap Weights Operator"""
+    bl_idname = "object.cap_weights_operator"
+    bl_label = "Cap Weights Operator"
+
+    limit_old_weight: bpy.props.FloatProperty(
+        name="Limit Old Weight",
+        default=0.35,
+        min=0.0,
+        max=1.0
+    )
+
+    limit_new_value: bpy.props.FloatProperty(
+        name="Limit New Value",
+        default=0.35,
+        min=0.0,
+        max=1.0
+    )
+
+    multiplier_value: bpy.props.FloatProperty(
+        name="Multiplier Value",
+        default=0.7,
+        min=0.0,
+        max=10.0
+    )
+
+    process_mode: bpy.props.EnumProperty(
+        name="Process Mode",
+        description="Select processing mode",
+        items=[
+            ('VG', 'Active Vertex Group', 'Process the active vertex group'),
+            ('ALL', 'All Vertex Groups', 'Process all vertex groups')
+        ],
+        default='VG'
+    )
+
+    def execute(self, context):
+        # Get the active object
+        obj = context.active_object
+
+        if obj and obj.type == 'MESH':
+            vertex_groups = obj.vertex_groups
+
+            # Determine which vertex groups to process
+            if self.process_mode == 'VG':
+                # Process only the active vertex group
+                active_vg = obj.vertex_groups.active
+                if not active_vg:
+                    self.report({'WARNING'}, "No active vertex group selected")
+                    return {'CANCELLED'}
+                groups_to_process = [active_vg]
+            else:
+                # Process all vertex groups
+                groups_to_process = vertex_groups
+
+            for vg in groups_to_process:
+                for v in obj.data.vertices:
+                    try:
+                        # Get the current weight of the vertex in the vertex group
+                        weight = vg.weight(v.index)
+
+                        # Check if weight exceeds the old weight limit
+                        if weight > self.limit_old_weight:
+                            new_weight = weight * self.multiplier_value
+
+                            # Ensure the new weight is not below the new value limit
+                            if new_weight < self.limit_new_value:
+                                new_weight = self.limit_new_value
+
+                            # Assign the new weight to the vertex
+                            vg.add([v.index], new_weight, 'REPLACE')
+                        else:
+                            # Leave the weight as it is
+                            pass
+                    except RuntimeError:
+                        # Vertex is not in this vertex group
+                        continue
+        else:
+            self.report({'WARNING'}, "Active object is not a mesh")
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self)
+
+def cap_weights_menu(self, context):
+    self.layout.separator()
+    op = self.layout.operator(CapWeightsOperator.bl_idname, text="Cap Weights - VG")
+    op.process_mode = 'VG'
+
+def register():
+    bpy.utils.register_class(CapWeightsOperator)
+    bpy.types.VIEW3D_MT_paint_weight.append(cap_weights_menu)
+
+def unregister():
+    bpy.utils.unregister_class(CapWeightsOperator)
+    bpy.types.VIEW3D_MT_paint_weight.remove(cap_weights_menu)
+
+if __name__ == "__main__":
+    register()
